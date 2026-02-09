@@ -10,6 +10,8 @@ AFRAME.registerComponent("end-menu", {
     score: { type: "number", default: 0 },
     hits: { type: "number", default: 0 },
     arrows: { type: "number", default: 0 },
+    bestScore: { type: "number", default: 0 },
+    isNewRecord: { type: "boolean", default: false },
   },
 
   init: function () {
@@ -133,6 +135,20 @@ AFRAME.registerComponent("end-menu", {
     pointsLabel.setAttribute("width", "1.2");
     menu.appendChild(pointsLabel);
 
+    const recordText = document.createElement("a-text");
+    const recordLabel = this.data.isNewRecord
+      ? "NOUVEAU RECORD !"
+      : `Record: ${this.data.bestScore}`;
+    recordText.setAttribute("value", recordLabel);
+    recordText.setAttribute("position", "0 -0.1 0.01");
+    recordText.setAttribute("align", "center");
+    recordText.setAttribute(
+      "color",
+      this.data.isNewRecord ? COLORS.gold : COLORS.bronze,
+    );
+    recordText.setAttribute("width", "1.4");
+    menu.appendChild(recordText);
+
     // Ligne de séparation avant stats
     const separator2 = document.createElement("a-entity");
     separator2.setAttribute("geometry", {
@@ -145,7 +161,7 @@ AFRAME.registerComponent("end-menu", {
       opacity: 0.5,
       shader: "flat",
     });
-    separator2.setAttribute("position", "0 -0.15 0.01");
+    separator2.setAttribute("position", "0 -0.18 0.01");
     menu.appendChild(separator2);
 
     // Statistiques (bien espacées)
@@ -159,7 +175,7 @@ AFRAME.registerComponent("end-menu", {
       "value",
       `Touches: ${this.data.hits}  |  Fleches: ${this.data.arrows}  |  Precision: ${accuracy}%`,
     );
-    statsText.setAttribute("position", "0 -0.28 0.01");
+    statsText.setAttribute("position", "0 -0.31 0.01");
     statsText.setAttribute("align", "center");
     statsText.setAttribute("color", "#bbb");
     statsText.setAttribute("width", "1.2");

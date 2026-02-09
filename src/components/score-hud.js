@@ -13,6 +13,7 @@ AFRAME.registerComponent("score-hud", {
   init: function () {
     this.score = 0;
     this.timeRemaining = 10;
+    this.bestScore = 0;
 
     // Couleurs médiévales
     this.COLORS = {
@@ -41,6 +42,11 @@ AFRAME.registerComponent("score-hud", {
     console.log("🎯 Score HUD VR médiéval prêt");
   },
 
+  getBestScore: function () {
+    const storedBestScore = Number(localStorage.getItem("bestScore") || 0);
+    return Number.isNaN(storedBestScore) ? 0 : storedBestScore;
+  },
+
   showHUD: function () {
     if (this.hudContainer) {
       this.hudContainer.setAttribute("visible", true);
@@ -58,6 +64,8 @@ AFRAME.registerComponent("score-hud", {
     if (this.hudContainer) {
       this.hudContainer.parentNode.removeChild(this.hudContainer);
     }
+
+    this.bestScore = this.getBestScore();
 
     // Conteneur principal
     this.hudContainer = document.createElement("a-entity");
@@ -135,6 +143,14 @@ AFRAME.registerComponent("score-hud", {
     this.scoreText.setAttribute("position", "0 -0.1 0.01");
     this.hudContainer.appendChild(this.scoreText);
 
+    this.bestScoreText = document.createElement("a-text");
+    this.bestScoreText.setAttribute("value", `Record: ${this.bestScore}`);
+    this.bestScoreText.setAttribute("align", "center");
+    this.bestScoreText.setAttribute("color", this.COLORS.gold);
+    this.bestScoreText.setAttribute("width", "1.2");
+    this.bestScoreText.setAttribute("position", "0 -0.16 0.01");
+    this.hudContainer.appendChild(this.bestScoreText);
+
     console.log("🎨 HUD VR médiéval créé");
   },
 
@@ -146,6 +162,12 @@ AFRAME.registerComponent("score-hud", {
       this.score = gameManager.totalScore;
       if (this.scoreText) {
         this.scoreText.setAttribute("value", `Butin: ${this.score}`);
+      }
+      if (this.score > this.bestScore) {
+        this.bestScore = this.score;
+        if (this.bestScoreText) {
+          this.bestScoreText.setAttribute("value", `Record: ${this.bestScore}`);
+        }
       }
       this.flashScore();
     }, 10);

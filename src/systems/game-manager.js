@@ -145,6 +145,8 @@ AFRAME.registerSystem("game-manager", {
       ? 0
       : storedBestScore;
     const newBestScore = Math.max(currentBestScore, this.totalScore);
+    this.bestScore = newBestScore;
+    this.isNewRecord = this.totalScore > currentBestScore;
     localStorage.setItem("bestScore", newBestScore.toString());
 
     // Émettre l'événement de fin de jeu pour cacher le HUD VR
@@ -161,6 +163,8 @@ AFRAME.registerSystem("game-manager", {
       score: this.totalScore,
       hits: this.totalHits,
       arrows: this.totalArrowsShot,
+      bestScore: this.bestScore || 0,
+      isNewRecord: !!this.isNewRecord,
     });
     this.el.appendChild(endMenu);
   },
