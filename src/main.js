@@ -11,6 +11,7 @@ import "./components/bow-draw-system.js";
 import "./components/bow-string.js";
 import "./components/arrow-physics.js";
 import "./components/target-behavior.js";
+import "./components/flying-target.js";
 import "./components/scene-mesh-handler.js";
 import "./components/surface-detector.js";
 import "./components/webxr-anchor-manager.js";

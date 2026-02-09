@@ -368,12 +368,16 @@ AFRAME.registerSystem("game-manager", {
     target.setAttribute("position", pos);
     target.setAttribute("rotation", spawnData.rotation);
     target.setAttribute("scale", `${scale} ${scale} ${scale}`);
-    target.setAttribute("surface-type", spawnData.surfaceType || "random");
+    const isFlyingTarget = Math.random() < 0.3;
+    const surfaceType = isFlyingTarget ? "air" : (spawnData.surfaceType || "random");
+    target.setAttribute("surface-type", surfaceType);
 
-    target.setAttribute("static-body", {
-      shape: "cylinder",
-      cylinderAxis: "z",
-    });
+    if (!isFlyingTarget) {
+      target.setAttribute("static-body", {
+        shape: "cylinder",
+        cylinderAxis: "z",
+      });
+    }
 
     target.setAttribute("target-behavior", {
       points,
@@ -381,10 +385,30 @@ AFRAME.registerSystem("game-manager", {
       movable: false,
     });
 
-    // Créer la géométrie de la cible avec taille variable
-    target.innerHTML = `
-      <a-entity gltf-model="#target-model"></a-entity>
-    `;
+    if (isFlyingTarget) {
+      target.setAttribute("geometry", {
+        primitive: "box",
+        width: 1,
+        height: 1,
+        depth: 1,
+      });
+      target.setAttribute("material", {
+        color: "#7ec8ff",
+        roughness: 0.6,
+        metalness: 0.1,
+      });
+      target.setAttribute("flying-target", {
+        amplitudeX: 0.5 + Math.random() * 0.4,
+        amplitudeY: 0.2 + Math.random() * 0.3,
+        amplitudeZ: 0.3 + Math.random() * 0.3,
+        speed: 0.9 + Math.random() * 0.6,
+      });
+    } else {
+      // Créer la géométrie de la cible avec taille variable
+      target.innerHTML = `
+        <a-entity gltf-model="#target-model"></a-entity>
+      `;
+    }
 
     this.el.appendChild(target);
     this.activeTargets.push(target);
@@ -397,7 +421,7 @@ AFRAME.registerSystem("game-manager", {
     }
 
     console.log(
-      `🎯 Nouvelle cible spawned: ${targetId} (${points}pts, ${hp}HP, ${spawnData.surfaceType})`,
+      `🎯 Nouvelle cible spawned: ${targetId} (${points}pts, ${hp}HP, ${surfaceType})`,
     );
   },
 

@@ -194,7 +194,7 @@ tick: function (time, deltaTime) {
     if (this.hasCollided) return;
     this.hasCollided = true;
 
-    const impactPoint = intersection.point;
+    const impactPoint = intersection.point.clone();
 
     // Trouver l'entité touchée
     let hitEntity = null;
@@ -220,13 +220,18 @@ tick: function (time, deltaTime) {
       hitEntity.components["target-behavior"].onArrowHit(this.el, impactPoint);
     }
 
-    // Planter la flèche à la position d'impact
-    this.el.object3D.position.copy(impactPoint);
-
     // Ajuster position pour que la flèche dépasse de la surface
     if (intersection.face && intersection.face.normal) {
-      const offset = intersection.face.normal.clone().multiplyScalar(0.1);
-      this.el.object3D.position.add(offset);
+      const normalWorld = intersection.face.normal.clone();
+      normalWorld.transformDirection(intersection.object.matrixWorld);
+      impactPoint.add(normalWorld.multiplyScalar(0.1));
+    }
+
+    if (hitType === "target" && hitEntity) {
+      this.attachArrowToTarget(hitEntity, impactPoint);
+    } else {
+      // Planter la flèche à la position d'impact
+      this.el.object3D.position.copy(impactPoint);
     }
 
     // Retirer la flèche après 5 secondes
@@ -256,6 +261,23 @@ tick: function (time, deltaTime) {
     };
 
     animate();
+  },
+
+  attachArrowToTarget: function (targetEl, worldImpactPoint) {
+    const worldQuat = this.el.object3D.getWorldQuaternion(new THREE.Quaternion());
+    const targetWorldQuat = targetEl.object3D.getWorldQuaternion(
+      new THREE.Quaternion(),
+    );
+    targetWorldQuat.invert();
+
+    const localImpact = targetEl.object3D.worldToLocal(
+      worldImpactPoint.clone(),
+    );
+    const localQuat = targetWorldQuat.multiply(worldQuat);
+
+    targetEl.appendChild(this.el);
+    this.el.object3D.position.copy(localImpact);
+    this.el.object3D.quaternion.copy(localQuat);
   },
 
   removeArrow: function () {
