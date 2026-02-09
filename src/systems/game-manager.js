@@ -140,6 +140,13 @@ AFRAME.registerSystem("game-manager", {
       bgSound.pause();
     }
 
+    const storedBestScore = Number(localStorage.getItem("bestScore") || 0);
+    const currentBestScore = Number.isNaN(storedBestScore)
+      ? 0
+      : storedBestScore;
+    const newBestScore = Math.max(currentBestScore, this.totalScore);
+    localStorage.setItem("bestScore", newBestScore.toString());
+
     // Émettre l'événement de fin de jeu pour cacher le HUD VR
     this.el.emit("game-ended");
 
