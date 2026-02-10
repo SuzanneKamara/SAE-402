@@ -9,10 +9,11 @@ AFRAME.registerComponent("surface-detector", {
     enabled: { type: "boolean", default: true },
     debugMode: { type: "boolean", default: false },
     defaultTargetHeight: { type: "number", default: 0.5 },
-    maxDistance: { type: "number", default: 10 },
-    minSurfaceArea: { type: "number", default: 0.25 },
-    stabilityFrames: { type: "number", default: 3 },
-    allowFallback: { type: "boolean", default: false },
+    maxDistance: { type: "number", default: 12 },
+    minSurfaceArea: { type: "number", default: 0.1 },
+    stabilityFrames: { type: "number", default: 2 },
+    allowFallback: { type: "boolean", default: true },
+    positionEpsilon: { type: "number", default: 0.15 },
     visualizeSurfaces: { type: "boolean", default: false },
   },
 
@@ -228,7 +229,8 @@ AFRAME.registerComponent("surface-detector", {
   },
 
   getSurfaceKey: function (position) {
-    return `${Math.round(position.x * 10)}-${Math.round(position.y * 10)}-${Math.round(position.z * 10)}`;
+    const epsilon = Math.max(this.data.positionEpsilon, 0.01);
+    return `${Math.round(position.x / epsilon)}-${Math.round(position.y / epsilon)}-${Math.round(position.z / epsilon)}`;
   },
 
   getRandomSpawnPoint: function () {

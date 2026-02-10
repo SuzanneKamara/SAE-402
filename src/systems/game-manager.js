@@ -10,6 +10,8 @@ AFRAME.registerSystem("game-manager", {
     maxTargets: { type: "number", default: 3 },
     difficulty: { type: "string", default: "normal" }, // easy, normal, hard
     requireRealSurfaces: { type: "boolean", default: true },
+    instantHitTestSpawn: { type: "boolean", default: true },
+    instantSpawnCooldown: { type: "number", default: 300 },
   },
 
   init: function () {
@@ -25,6 +27,12 @@ AFRAME.registerSystem("game-manager", {
     this.anchorManager = null;
     this.useAnchors = false;
     this.firstTargetSpawned = false;
+    this.debugLog = (message) => {
+      if (typeof window !== "undefined" && window.vrDebugLog) {
+        window.vrDebugLog(message);
+      }
+    };
+    this.lastInstantSpawnTime = 0;
 
     this.el.addEventListener("target-hit", this.onTargetHit.bind(this));
     this.el.addEventListener("target-destroyed", this.onTargetDestroyed.bind(this));
@@ -51,6 +59,14 @@ AFRAME.registerSystem("game-manager", {
       const hitTestCount = Number(evt.detail?.hitTest || 0);
       const hasRealSurface = realCount + meshCount + hitTestCount > 0;
 
+      const surfaceLog =
+        `Surfaces: real=${realCount} mesh=${meshCount} hitTest=${hitTestCount}`;
+      console.log(
+        "🧭 Surfaces détectées:",
+        `${surfaceLog} hasRealSurface=${hasRealSurface}`,
+      );
+      this.debugLog(`${surfaceLog} ok=${hasRealSurface}`);
+
       if (this.data.requireRealSurfaces && !hasRealSurface) {
         return;
       }
@@ -63,6 +79,19 @@ AFRAME.registerSystem("game-manager", {
 
       if (!this.gameRunning) {
         this.startGame();
+      }
+
+      if (
+        this.gameRunning &&
+        this.data.instantHitTestSpawn &&
+        this.sceneMeshHandler &&
+        this.sceneMeshHandler.isHitTestActive()
+      ) {
+        const now = Date.now();
+        if (now - this.lastInstantSpawnTime >= this.data.instantSpawnCooldown) {
+          this.lastInstantSpawnTime = now;
+          this.spawnRandomTarget();
+        }
       }
     });
 
@@ -180,7 +209,11 @@ AFRAME.registerSystem("game-manager", {
   hasAvailableSurface: function () {
     if (this.sceneMeshHandler && this.sceneMeshHandler.isHitTestActive()) {
       const detected = this.sceneMeshHandler.getDetectedSurface();
-      if (detected && detected.isRealSurface) return true;
+      if (detected && detected.isRealSurface) {
+        console.log("✅ Hit-test actif: surface réelle disponible");
+        this.debugLog("Hit-test: surface OK");
+        return true;
+      }
     }
 
     if (!this.surfaceDetector || !this.surfaceDetector.surfaces) return false;
@@ -188,13 +221,29 @@ AFRAME.registerSystem("game-manager", {
     const horizontal = this.surfaceDetector.surfaces.horizontal || [];
     const vertical = this.surfaceDetector.surfaces.vertical || [];
     const total = horizontal.length + vertical.length;
-    if (total === 0) return false;
+    if (total === 0) {
+      console.log("⚠️ Aucune surface détectée par surface-detector");
+      this.debugLog("Surface-detector: 0 surface");
+      return false;
+    }
 
-    if (!this.data.requireRealSurfaces) return true;
+    if (!this.data.requireRealSurfaces) {
+      console.log("ℹ️ requireRealSurfaces désactivé, surface acceptée");
+      this.debugLog("Surfaces: fallback ok");
+      return true;
+    }
 
     const realHorizontal = horizontal.filter((s) => s.isRealSurface).length;
     const realVertical = vertical.filter((s) => s.isRealSurface).length;
-    return realHorizontal + realVertical > 0;
+    const hasReal = realHorizontal + realVertical > 0;
+    console.log(
+      "🧱 Surfaces réelles surface-detector:",
+      `horizontal=${realHorizontal} vertical=${realVertical} hasReal=${hasReal}`,
+    );
+    this.debugLog(
+      `Surfaces: h=${realHorizontal} v=${realVertical} ok=${hasReal}`,
+    );
+    return hasReal;
   },
 
   calculateSpawnFromHitTest: function (detectedSurface) {
@@ -311,7 +360,11 @@ AFRAME.registerSystem("game-manager", {
       spawnData = this.surfaceDetector.getRandomSpawnPoint();
     }
 
-    if (!spawnData) return;
+    if (!spawnData) {
+      console.log("❌ Aucune donnée de spawn disponible");
+      this.debugLog("Spawn: no data");
+      return;
+    }
 
     const camera = this.el.sceneEl.camera;
     const cameraPos = camera
@@ -327,7 +380,14 @@ AFRAME.registerSystem("game-manager", {
         );
 
     const distance = pos.distanceTo(cameraPos);
-    if (distance < 1.5 || distance > 10) return;
+    if (distance < 1.5 || distance > 12) {
+      console.log(
+        "⚠️ Spawn rejeté (distance)",
+        distance.toFixed(2),
+      );
+      this.debugLog(`Spawn: distance ${distance.toFixed(2)}`);
+      return;
+    }
 
     const toTarget = new THREE.Vector3()
       .subVectors(pos, cameraPos)
@@ -336,8 +396,44 @@ AFRAME.registerSystem("game-manager", {
       camera?.quaternion || new THREE.Quaternion(),
     );
     const angle = Math.acos(toTarget.dot(cameraForward)) * (180 / Math.PI);
-    const maxAngle = this.firstTargetSpawned ? 60 : 30;
-    if (angle > maxAngle) return;
+    const maxAngle = this.firstTargetSpawned ? 90 : 45;
+    if (angle > maxAngle) {
+      console.log(
+        "⚠️ Spawn rejeté (angle)",
+        angle.toFixed(1),
+        `max=${maxAngle}`,
+      );
+      this.debugLog(`Spawn: angle ${angle.toFixed(1)}/${maxAngle}`);
+      return;
+    }
+
+    if (spawnData.normal && spawnData.surfaceType === "vertical") {
+      const normal = spawnData.normal.clone
+        ? spawnData.normal.clone()
+        : new THREE.Vector3(
+            spawnData.normal.x,
+            spawnData.normal.y,
+            spawnData.normal.z,
+          );
+      const toCamera = new THREE.Vector3()
+        .subVectors(cameraPos, pos)
+        .normalize();
+
+      if (normal.dot(toCamera) < 0) {
+        normal.multiplyScalar(-1);
+        const qAlign = new THREE.Quaternion().setFromUnitVectors(
+          new THREE.Vector3(0, 0, -1),
+          normal.clone().normalize(),
+        );
+        const eAlign = new THREE.Euler().setFromQuaternion(qAlign, "XYZ");
+        spawnData.rotation = {
+          x: THREE.MathUtils.radToDeg(eAlign.x),
+          y: THREE.MathUtils.radToDeg(eAlign.y),
+          z: THREE.MathUtils.radToDeg(eAlign.z),
+        };
+        spawnData.normal = normal;
+      }
+    }
 
     this.ensureFacingCamera(spawnData);
 
@@ -386,29 +482,41 @@ AFRAME.registerSystem("game-manager", {
     });
 
     if (isFlyingTarget) {
-      target.setAttribute("geometry", {
-        primitive: "box",
-        width: 1,
-        height: 1,
-        depth: 1,
-      });
-      target.setAttribute("material", {
-        color: "#7ec8ff",
-        roughness: 0.6,
-        metalness: 0.1,
-      });
       target.setAttribute("flying-target", {
         amplitudeX: 0.5 + Math.random() * 0.4,
         amplitudeY: 0.2 + Math.random() * 0.3,
         amplitudeZ: 0.3 + Math.random() * 0.3,
         speed: 0.9 + Math.random() * 0.6,
       });
-    } else {
-      // Créer la géométrie de la cible avec taille variable
-      target.innerHTML = `
-        <a-entity gltf-model="#target-model"></a-entity>
-      `;
     }
+
+    // Créer la géométrie de la cible avec fallback visuel
+    const modelEntity = document.createElement("a-entity");
+    modelEntity.setAttribute("gltf-model", "#target-model");
+
+    const fallbackSphere = document.createElement("a-entity");
+    fallbackSphere.setAttribute("geometry", {
+      primitive: "sphere",
+      radius: 0.25,
+    });
+    fallbackSphere.setAttribute("material", {
+      color: "#ff3b30",
+      shader: "flat",
+      opacity: 0.9,
+    });
+
+    modelEntity.addEventListener("model-loaded", () => {
+      fallbackSphere.setAttribute("visible", false);
+      this.debugLog("Target model loaded");
+    });
+
+    modelEntity.addEventListener("model-error", (evt) => {
+      const errorDetail = evt?.detail?.src || "unknown";
+      this.debugLog(`Target model error: ${errorDetail}`);
+    });
+
+    target.appendChild(modelEntity);
+    target.appendChild(fallbackSphere);
 
     this.el.appendChild(target);
     this.activeTargets.push(target);

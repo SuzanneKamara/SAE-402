@@ -16,6 +16,8 @@ AFRAME.registerComponent("scene-mesh-handler", {
     this.lastResultTime = 0;
     this.hasHitTestThisFrame = false;
     this.usesMockSurfaces = false;
+    this.hitTestHistory = [];
+    this.hitTestHistorySize = 6;
 
     if ("xr" in navigator) {
       this.checkWebXRSupport();
@@ -189,10 +191,29 @@ AFRAME.registerComponent("scene-mesh-handler", {
         .applyQuaternion(quaternion)
         .normalize();
 
+      this.hitTestHistory.unshift({ position, normal, quaternion });
+      if (this.hitTestHistory.length > this.hitTestHistorySize) {
+        this.hitTestHistory.pop();
+      }
+
+      const avgPosition = new THREE.Vector3();
+      const avgNormal = new THREE.Vector3();
+      for (const entry of this.hitTestHistory) {
+        avgPosition.add(entry.position);
+        avgNormal.add(entry.normal);
+      }
+      avgPosition.divideScalar(this.hitTestHistory.length);
+      avgNormal.normalize();
+
+      const smoothQuaternion = new THREE.Quaternion().setFromUnitVectors(
+        new THREE.Vector3(0, 0, 1),
+        avgNormal.clone().normalize(),
+      );
+
       const surface = {
-        position,
-        quaternion,
-        normal,
+        position: avgPosition,
+        quaternion: smoothQuaternion,
+        normal: avgNormal,
         width: 1,
         height: 1,
         stability: 1,
