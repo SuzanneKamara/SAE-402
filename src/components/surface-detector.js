@@ -234,16 +234,8 @@ AFRAME.registerComponent("surface-detector", {
   },
 
   getRandomSpawnPoint: function () {
-    const total =
-      this.surfaces.horizontal.length + this.surfaces.vertical.length;
-    if (total === 0) return null;
-
-    const useHorizontal =
-      Math.random() < this.surfaces.horizontal.length / total;
-
-    return useHorizontal
-      ? this.getRandomHorizontalSpawnPoint()
-      : this.getRandomVerticalSpawnPoint();
+    if (this.surfaces.vertical.length === 0) return null;
+    return this.getRandomVerticalSpawnPoint();
   },
 
   getRandomHorizontalSpawnPoint: function () {
@@ -295,32 +287,43 @@ AFRAME.registerComponent("surface-detector", {
     const normal = surface.outwardNormal || new THREE.Vector3(0, 0, 1);
     const position = surface.position.clone();
 
+    // S'assurer que la normale pointe vers la camera
+    const camera = this.el.sceneEl.camera;
+    if (camera) {
+      const cameraPos = camera.getWorldPosition(new THREE.Vector3());
+      const toCamera = new THREE.Vector3()
+        .subVectors(cameraPos, position)
+        .normalize();
+      if (normal.dot(toCamera) < 0) {
+        normal.multiplyScalar(-1);
+      }
+    }
+
+    // Garder uniquement une normale horizontale (cible toujours verticale)
+    const flattenedNormal = new THREE.Vector3(normal.x, 0, normal.z);
+    if (flattenedNormal.lengthSq() < 0.0001) return null;
+    flattenedNormal.normalize();
+
     const offsetY = (Math.random() - 0.5) * (surface.height || 2) * 0.6;
     const offsetX = (Math.random() - 0.5) * (surface.width || 2) * 0.6;
 
-    const perpendicular = new THREE.Vector3(-normal.z, 0, normal.x).normalize();
+    const perpendicular = new THREE.Vector3(-flattenedNormal.z, 0, flattenedNormal.x).normalize();
     position.add(perpendicular.multiplyScalar(offsetX));
     position.y += offsetY;
 
-    position.add(normal.clone().multiplyScalar(0.2));
-
-    const qAlign = new THREE.Quaternion().setFromUnitVectors(
-      new THREE.Vector3(0, 0, -1),
-      normal.clone().normalize(),
-    );
-    const eAlign = new THREE.Euler().setFromQuaternion(qAlign, "XYZ");
+    position.add(flattenedNormal.clone().multiplyScalar(0.2));
 
     return {
       position,
       rotation: {
-        x: THREE.MathUtils.radToDeg(eAlign.x),
-        y: THREE.MathUtils.radToDeg(eAlign.y),
-        z: THREE.MathUtils.radToDeg(eAlign.z),
+        x: 0,
+        y: THREE.MathUtils.radToDeg(Math.atan2(flattenedNormal.x, flattenedNormal.z)),
+        z: 0,
       },
       surfaceType: "vertical",
       isRealSurface: surface.isRealSurface || false,
       stability: surface.stability || 0,
-      normal,
+      normal: flattenedNormal,
     };
   },
 });

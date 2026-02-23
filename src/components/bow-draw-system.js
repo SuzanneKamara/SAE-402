@@ -225,7 +225,7 @@ AFRAME.registerComponent("bow-draw-system", {
     const scene = this.el.sceneEl;
     const arrow = document.createElement("a-entity");
 
-    arrow.setAttribute("gltf-model", "fleche.glb");
+    arrow.setAttribute("gltf-model", "#arrow-model");
     arrow.setAttribute("position", position);
     arrow.object3D.quaternion.copy(rotation);
     arrow.setAttribute("arrow-physics", `speed: ${speed}`);

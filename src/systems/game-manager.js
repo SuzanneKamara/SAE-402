@@ -262,46 +262,48 @@ AFRAME.registerSystem("game-manager", {
           detectedSurface.normal.z,
         );
 
-    const isCeiling = normal.y <= -0.5;
-    const isHorizontal = normal.y >= 0.5;
+    // S'assurer que la normale pointe vers la camera pour que la cible fasse face au joueur
+    const camera = this.el.sceneEl.camera;
+    if (camera) {
+      const cameraPos = camera.getWorldPosition(new THREE.Vector3());
+      const toCamera = new THREE.Vector3()
+        .subVectors(cameraPos, position)
+        .normalize();
+      if (normal.dot(toCamera) < 0) {
+        normal.multiplyScalar(-1);
+      }
+    }
 
     let surfaceType = "vertical";
     let rotation = { x: 0, y: 0, z: 0 };
 
-    if (isHorizontal || isCeiling) {
-      surfaceType = "horizontal";
-      position.add(normal.clone().multiplyScalar(isCeiling ? 0.6 : 0.5));
-
-      const camera = this.el.sceneEl.camera;
-      if (camera) {
-        const cameraPos = camera.getWorldPosition(new THREE.Vector3());
-        const temp = new THREE.Object3D();
-        temp.position.copy(position);
-        temp.lookAt(cameraPos);
-        rotation = { x: 0, y: THREE.MathUtils.radToDeg(temp.rotation.y), z: 0 };
-        if (isCeiling) rotation.x = 180;
-      }
-    } else {
-      surfaceType = "vertical";
-      position.add(normal.clone().multiplyScalar(0.2));
-      const qAlign = new THREE.Quaternion().setFromUnitVectors(
-        new THREE.Vector3(0, 0, -1),
-        normal.clone().normalize(),
-      );
-      const eAlign = new THREE.Euler().setFromQuaternion(qAlign, "XYZ");
-      rotation = {
-        x: THREE.MathUtils.radToDeg(eAlign.x),
-        y: THREE.MathUtils.radToDeg(eAlign.y),
-        z: THREE.MathUtils.radToDeg(eAlign.z),
-      };
+    // Garder uniquement les surfaces verticales et forcer une orientation droite
+    const flattenedNormal = new THREE.Vector3(normal.x, 0, normal.z);
+    if (flattenedNormal.lengthSq() < 0.0001) {
+      return null;
     }
+    const normalizedNormal = flattenedNormal.normalize();
+
+    // Rotation verticale uniquement (yaw) pour garder la cible droite
+    rotation = {
+      x: 0,
+      y: THREE.MathUtils.radToDeg(Math.atan2(normalizedNormal.x, normalizedNormal.z)),
+      z: 0,
+    };
+
+    // Décaler la cible légèrement hors de la surface
+    position.add(normalizedNormal.clone().multiplyScalar(0.2));
+
+    console.log(
+      `🎯 Spawn alignment: ${surfaceType} | normal=(${normalizedNormal.x.toFixed(2)},${normalizedNormal.y.toFixed(2)},${normalizedNormal.z.toFixed(2)}) | rotation=(${rotation.x.toFixed(0)},${rotation.y.toFixed(0)},${rotation.z.toFixed(0)})`,
+    );
 
     return {
       position,
       rotation,
       surfaceType,
       isRealSurface: true,
-      normal,
+      normal: normalizedNormal,
     };
   },
 
@@ -366,6 +368,11 @@ AFRAME.registerSystem("game-manager", {
       return;
     }
 
+    if (spawnData.surfaceType !== "vertical") {
+      this.debugLog("Spawn: non-vertical surface ignored");
+      return;
+    }
+
     const camera = this.el.sceneEl.camera;
     const cameraPos = camera
       ? camera.getWorldPosition(new THREE.Vector3())
@@ -407,37 +414,10 @@ AFRAME.registerSystem("game-manager", {
       return;
     }
 
-    if (spawnData.normal && spawnData.surfaceType === "vertical") {
-      const normal = spawnData.normal.clone
-        ? spawnData.normal.clone()
-        : new THREE.Vector3(
-            spawnData.normal.x,
-            spawnData.normal.y,
-            spawnData.normal.z,
-          );
-      const toCamera = new THREE.Vector3()
-        .subVectors(cameraPos, pos)
-        .normalize();
+    // 🎯 La rotation est déjà définie correctement dans calculateSpawnFromHitTest()
+    // Pas besoin de correction supplémentaire pour les surfaces verticales
 
-      if (normal.dot(toCamera) < 0) {
-        normal.multiplyScalar(-1);
-        const qAlign = new THREE.Quaternion().setFromUnitVectors(
-          new THREE.Vector3(0, 0, -1),
-          normal.clone().normalize(),
-        );
-        const eAlign = new THREE.Euler().setFromQuaternion(qAlign, "XYZ");
-        spawnData.rotation = {
-          x: THREE.MathUtils.radToDeg(eAlign.x),
-          y: THREE.MathUtils.radToDeg(eAlign.y),
-          z: THREE.MathUtils.radToDeg(eAlign.z),
-        };
-        spawnData.normal = normal;
-      }
-    }
-
-    this.ensureFacingCamera(spawnData);
-
-    const minDistance = 0.5;
+    const minDistance = 1.0;
     for (const existing of this.activeTargets) {
       if (!existing || !existing.object3D) continue;
       if (existing.object3D.position.distanceTo(pos) < minDistance) return;
@@ -465,7 +445,7 @@ AFRAME.registerSystem("game-manager", {
     target.setAttribute("rotation", spawnData.rotation);
     target.setAttribute("scale", `${scale} ${scale} ${scale}`);
     const isFlyingTarget = Math.random() < 0.3;
-    const surfaceType = isFlyingTarget ? "air" : (spawnData.surfaceType || "random");
+    const surfaceType = "vertical";
     target.setAttribute("surface-type", surfaceType);
 
     if (!isFlyingTarget) {
@@ -482,17 +462,23 @@ AFRAME.registerSystem("game-manager", {
     });
 
     if (isFlyingTarget) {
+      // Mouvement dans un plan vertical (X/Y) pour rester droit
       target.setAttribute("flying-target", {
+        mode: "sagittal",
         amplitudeX: 0.5 + Math.random() * 0.4,
         amplitudeY: 0.2 + Math.random() * 0.3,
-        amplitudeZ: 0.3 + Math.random() * 0.3,
+        amplitudeZ: 0.0,
         speed: 0.9 + Math.random() * 0.6,
+        enabled: true,
       });
     }
 
     // Créer la géométrie de la cible avec fallback visuel
     const modelEntity = document.createElement("a-entity");
     modelEntity.setAttribute("gltf-model", "#target-model");
+    // Rotation supplémentaire du modèle pour corriger l'orientation du GLB
+    modelEntity.setAttribute("rotation", "0 0 0");
+    modelEntity.setAttribute("scale", "1 1 1");
 
     const fallbackSphere = document.createElement("a-entity");
     fallbackSphere.setAttribute("geometry", {
@@ -505,6 +491,7 @@ AFRAME.registerSystem("game-manager", {
       opacity: 0.9,
     });
 
+    // Appliquer la rotation seulement après chargement du modèle
     modelEntity.addEventListener("model-loaded", () => {
       fallbackSphere.setAttribute("visible", false);
       this.debugLog("Target model loaded");
