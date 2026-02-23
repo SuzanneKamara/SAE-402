@@ -5,6 +5,10 @@
  */
 
 AFRAME.registerComponent("scene-mesh-handler", {
+  schema: {
+    visualizeSurfaces: { type: 'boolean', default: false },
+  },
+
   init: function () {
     this.sceneMeshes = [];
     this.spawnSurfaces = [];
@@ -18,6 +22,10 @@ AFRAME.registerComponent("scene-mesh-handler", {
     this.usesMockSurfaces = false;
     this.hitTestHistory = [];
     this.hitTestHistorySize = 6;
+    this.realSurfaceMeshes = new Map();
+    this.maxRealMeshes = 20;
+    this.meshUpdateInterval = 300;
+    this.lastMeshUpdate = 0;
 
     if ("xr" in navigator) {
       this.checkWebXRSupport();
@@ -227,6 +235,13 @@ AFRAME.registerComponent("scene-mesh-handler", {
       this.hasHitTestThisFrame = true;
       this.lastResultTime = Date.now();
 
+      // Créer un mesh physique pour la surface détectée
+      const now = Date.now();
+      if (now - this.lastMeshUpdate > this.meshUpdateInterval) {
+        this.createOrUpdateRealSurfaceMesh(avgPosition, avgNormal, smoothQuaternion);
+        this.lastMeshUpdate = now;
+      }
+
       this.el.sceneEl.emit("surface-detected", {
         position,
         normal,
@@ -239,6 +254,72 @@ AFRAME.registerComponent("scene-mesh-handler", {
     } catch (error) {
       console.warn("⚠️ Hit-test error:", error.message);
     }
+  },
+
+  createOrUpdateRealSurfaceMesh: function (position, normal, quaternion) {
+    // Créer une clé de position arrondie pour éviter trop de meshes
+    const posKey = `${Math.round(position.x * 2) / 2}_${Math.round(position.y * 2) / 2}_${Math.round(position.z * 2) / 2}`;
+
+    // Si un mesh existe déjà à cette position, le mettre à jour
+    if (this.realSurfaceMeshes.has(posKey)) {
+      const existingMesh = this.realSurfaceMeshes.get(posKey);
+      existingMesh.setAttribute('position', position);
+      existingMesh.object3D.quaternion.copy(quaternion);
+      existingMesh.lastUpdate = Date.now();
+      return;
+    }
+
+    // Nettoyer les vieux meshes si on dépasse la limite
+    if (this.realSurfaceMeshes.size >= this.maxRealMeshes) {
+      let oldestKey = null;
+      let oldestTime = Infinity;
+      for (const [key, mesh] of this.realSurfaceMeshes.entries()) {
+        if (mesh.lastUpdate < oldestTime) {
+          oldestTime = mesh.lastUpdate;
+          oldestKey = key;
+        }
+      }
+      if (oldestKey) {
+        const oldMesh = this.realSurfaceMeshes.get(oldestKey);
+        if (oldMesh.parentNode) oldMesh.parentNode.removeChild(oldMesh);
+        this.realSurfaceMeshes.delete(oldestKey);
+      }
+    }
+
+    // Créer un nouveau mesh invisible pour la collision
+    const meshEntity = document.createElement('a-plane');
+    meshEntity.setAttribute('position', position);
+    meshEntity.object3D.quaternion.copy(quaternion);
+    meshEntity.setAttribute('width', 3);
+    meshEntity.setAttribute('height', 3);
+    
+    // Mode debug : rendre les surfaces visibles
+    if (this.data.visualizeSurfaces) {
+      meshEntity.setAttribute('material', {
+        color: '#00ff00',
+        opacity: 0.3,
+        transparent: true,
+        wireframe: true
+      });
+    } else {
+      meshEntity.setAttribute('material', {
+        color: '#00ff00',
+        opacity: 0,
+        transparent: true,
+        visible: false
+      });
+    }
+    
+    meshEntity.setAttribute('class', 'scene-mesh real-surface');
+    meshEntity.setAttribute('data-real-surface', 'true');
+    meshEntity.id = `real-surface-${posKey}`;
+    meshEntity.lastUpdate = Date.now();
+
+    this.el.sceneEl.appendChild(meshEntity);
+    this.realSurfaceMeshes.set(posKey, meshEntity);
+    this.sceneMeshes.push(meshEntity);
+
+    console.log(`✅ Surface réelle créée pour collision: ${posKey}`);
   },
 
   emitSceneMeshUpdate: function () {

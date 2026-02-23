@@ -48,10 +48,17 @@ AFRAME.registerComponent("arrow-physics", {
     // Récupérer tous les objets de collision
     this.collisionObjects = [];
     this.updateCollisionObjects();
+    
+    // Mettre à jour les collisions toutes les 100ms pour inclure nouvelles surfaces
+    this.collisionUpdateInterval = 100;
+    this.lastCollisionUpdate = Date.now();
   },
 
   updateCollisionObjects: function () {
     const scene = this.el.sceneEl;
+
+    // Vider la liste avant de la reconstruire
+    this.collisionObjects = [];
 
     // Cibles uniquement
     const targets = scene.querySelectorAll("[target-behavior]");
@@ -67,6 +74,7 @@ AFRAME.registerComponent("arrow-physics", {
 
     // Meshes de la scène (planes, sols, environnement, etc.)
     const sceneMeshes = scene.querySelectorAll("[geometry]");
+    let realSurfaceCount = 0;
     sceneMeshes.forEach((mesh) => {
       // Vérifier si cet élément ou un de ses parents a l'attribut hud-element
       let isHudElement = false;
@@ -91,11 +99,16 @@ AFRAME.registerComponent("arrow-physics", {
           entity: mesh,
           type: "environment",
         });
+        
+        // Compter les surfaces réelles
+        if (mesh.hasAttribute("data-real-surface")) {
+          realSurfaceCount++;
+        }
       }
     });
 
     console.log(
-      `🎯 ${this.collisionObjects.length} objets de collision détectés`,
+      `🎯 ${this.collisionObjects.length} objets de collision détectés (${realSurfaceCount} surfaces réelles)`,
     );
   },
 
@@ -110,6 +123,13 @@ tick: function (time, deltaTime) {
   if (this.lifetime > this.maxLifetime) {
     this.removeArrow();
     return;
+  }
+
+  // Mettre à jour les objets de collision périodiquement pour inclure les nouvelles surfaces
+  const now = Date.now();
+  if (now - this.lastCollisionUpdate > this.collisionUpdateInterval) {
+    this.updateCollisionObjects();
+    this.lastCollisionUpdate = now;
   }
 
   // 1. Accélération due à la gravité (accélération, pas force)
