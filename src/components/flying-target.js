@@ -22,14 +22,29 @@ AFRAME.registerComponent("flying-target", {
   },
 
   init: function () {
-    this.basePosition = this.el.object3D.position.clone();
+    this.basePosition = null; // Sera capturé au premier tick
+    this.basePositionCaptured = false;
     this.phaseOffset = Math.random() * Math.PI * 2;
     
-    console.log(`🎯 Flying-target initialisé: mode=${this.data.mode}, speed=${this.data.speed.toFixed(1)}`);
+    // Écouteurs d'événements pour la pause/reprise du jeu
+    this.onGamePaused = this.pause.bind(this);
+    this.onGameResumed = this.resume.bind(this);
+    
+    this.el.sceneEl.addEventListener("game-paused", this.onGamePaused);
+    this.el.sceneEl.addEventListener("game-resumed", this.onGameResumed);
+    
+    console.log(`🎯 Flying-target initialisé: enabled=${this.data.enabled}, mode=${this.data.mode}, speed=${this.data.speed.toFixed(1)}`);
   },
 
   tick: function (time) {
     if (!this.data.enabled) return;
+
+    // Capturer la position de base au premier tick (quand l'élément est dans la scène)
+    if (!this.basePositionCaptured) {
+      this.basePosition = this.el.object3D.position.clone();
+      this.basePositionCaptured = true;
+      console.log(`📍 Base position capturée: [${this.basePosition.x.toFixed(2)}, ${this.basePosition.y.toFixed(2)}, ${this.basePosition.z.toFixed(2)}]`);
+    }
 
     const t = time / 1000;
     let newX = this.basePosition.x;
@@ -66,6 +81,13 @@ AFRAME.registerComponent("flying-target", {
     }
 
     this.el.object3D.position.set(newX, newY, newZ);
+
+    // Log periodically to verify movement (every 2000ms)
+    if (!this.lastLogTime) this.lastLogTime = time;
+    if (time - this.lastLogTime > 2000) {
+      console.log(`✈️ Moving: pos=[${newX.toFixed(2)}, ${newY.toFixed(2)}, ${newZ.toFixed(2)}], base=[${this.basePosition.x.toFixed(2)}, ${this.basePosition.y.toFixed(2)}, ${this.basePosition.z.toFixed(2)}], amplitudes=[${this.data.amplitudeX.toFixed(2)}, ${this.data.amplitudeY.toFixed(2)}, ${this.data.amplitudeZ.toFixed(2)}], mode=${this.data.mode}, enabled=${this.data.enabled}`);
+      this.lastLogTime = time;
+    }
   },
 
   // Pause/Reprendre le mouvement
@@ -85,5 +107,16 @@ AFRAME.registerComponent("flying-target", {
       this.data.mode = newMode;
       console.log(`🔄 Mode de mouvement changé: ${newMode}`);
     }
+  },
+
+  // Nettoyer les écouteurs d'événements
+  remove: function () {
+    if (this.onGamePaused) {
+      this.el.sceneEl.removeEventListener("game-paused", this.onGamePaused);
+    }
+    if (this.onGameResumed) {
+      this.el.sceneEl.removeEventListener("game-resumed", this.onGameResumed);
+    }
+    console.log("🧹 Flying-target nettoyé");
   },
 });

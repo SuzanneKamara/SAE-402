@@ -21,12 +21,15 @@ AFRAME.registerSystem("game-manager", {
     this.totalHits = 0;
     this.spawnTimer = null;
     this.gameRunning = false;
+    this.gamePaused = false; // ⏸️ État de pause
     this.surfacesReady = false;
     this.surfaceDetector = null;
     this.sceneMeshHandler = null;
     this.anchorManager = null;
     this.useAnchors = false;
     this.firstTargetSpawned = false;
+    this.lastSpawnPosition = null; // 🚫 Historique de spawn pour éviter les répétitions
+    this.movementPhaseActive = false; // 🎪 Phases de mouvement des cibles
     this.debugLog = (message) => {
       if (typeof window !== "undefined" && window.vrDebugLog) {
         window.vrDebugLog(message);
@@ -99,6 +102,23 @@ AFRAME.registerSystem("game-manager", {
       this.startGame();
     });
 
+    // ⏸️ Écouteurs pour la pause
+    this.el.addEventListener("pause-game", () => {
+      this.pauseGame();
+    });
+
+    this.el.addEventListener("resume-game", () => {
+      this.resumeGame();
+    });
+
+    this.el.addEventListener("restart-game", () => {
+      this.restartGame();
+    });
+
+    this.el.addEventListener("quit-to-menu", () => {
+      this.quitToMenu();
+    });
+
     console.log("🎮 Game Manager initialisé");
   },
 
@@ -123,10 +143,18 @@ AFRAME.registerSystem("game-manager", {
     this.startTargetSpawning();
     this.createScoreDisplay();
     this.startCountdown();
+    // DISABLED FOR TESTING: this.startMovementPhases();
+  },
+
+  startMovementPhases: function () {
+    // DISABLED FOR TESTING: Phase system disabled, all targets are flying
+    // To re-enable, uncomment the code below and uncomment the call in startGame()
   },
 
   startCountdown: function () {
     this.countdownTimer = setInterval(() => {
+      if (this.gamePaused) return; // ⏸️ Ne pas décompter si en pause
+
       this.gameTime--;
       this.updateTimerDisplay();
 
@@ -161,6 +189,12 @@ AFRAME.registerSystem("game-manager", {
     if (this.countdownTimer) {
       clearInterval(this.countdownTimer);
       this.countdownTimer = null;
+    }
+
+    // Arrêter les phases de mouvement
+    if (this.movementPhaseTimer) {
+      clearInterval(this.movementPhaseTimer);
+      this.movementPhaseTimer = null;
     }
 
     // Arrêter la musique
@@ -198,8 +232,90 @@ AFRAME.registerSystem("game-manager", {
     this.el.appendChild(endMenu);
   },
 
+  pauseGame: function () {
+    if (this.gamePaused || !this.gameRunning) return;
+
+    this.gamePaused = true;
+    console.log("⏸️ Jeu en pause");
+
+    // Émettre l'événement pour afficher le menu de pause
+    this.el.sceneEl.emit("game-paused");
+  },
+
+  resumeGame: function () {
+    if (!this.gamePaused || !this.gameRunning) return;
+
+    this.gamePaused = false;
+    console.log("▶️ Jeu repris");
+
+    // Émettre l'événement pour masquer le menu de pause
+    this.el.sceneEl.emit("game-resumed");
+  },
+
+  restartGame: function () {
+    console.log("🔄 Redémarrage du jeu");
+    
+    // Arrêter le jeu actuel
+    this.stopGame();
+
+    // Nettoyer les éléments
+    this.gamePaused = false;
+    this.gameRunning = false;
+    this.firstTargetSpawned = false;
+    
+    // Supprimer toutes les cibles
+    for (const target of this.activeTargets) {
+      if (target && target.parentNode) {
+        target.parentNode.removeChild(target);
+      }
+    }
+    this.activeTargets = [];
+
+    // Redémarrer le jeu
+    this.startGame();
+  },
+
+  quitToMenu: function () {
+    console.log("🚪 Retour au menu principal");
+    
+    // Arrêter le jeu
+    this.stopGame();
+    this.gamePaused = false;
+    this.gameRunning = false;
+
+    // Supprimer toutes les cibles
+    for (const target of this.activeTargets) {
+      if (target && target.parentNode) {
+        target.parentNode.removeChild(target);
+      }
+    }
+    this.activeTargets = [];
+
+    // Arrêter la musique
+    const bgSound = document.getElementById("background-sound");
+    if (bgSound) {
+      bgSound.pause();
+    }
+
+    // Émettre l'événement de fin de jeu
+    this.el.emit("game-ended");
+
+    // Afficher le menu de démarrage (re-initialiser l'écran)
+    const mainScene = document.querySelector("[vr-menu]");
+    if (mainScene) {
+      mainScene.setAttribute("visible", true);
+    }
+
+    // Supprimer le menu de pause
+    const pauseMenu = document.querySelector("[pause-menu]");
+    if (pauseMenu && pauseMenu.parentNode) {
+      pauseMenu.parentNode.removeChild(pauseMenu);
+    }
+  },
+
   startTargetSpawning: function () {
     this.spawnTimer = setInterval(() => {
+      if (this.gamePaused) return; // ⏸️ Ne pas spawner si en pause
       if (this.activeTargets.length >= this.data.maxTargets) return;
       if (!this.hasAvailableSurface()) return;
       this.spawnRandomTarget();
@@ -291,8 +407,9 @@ AFRAME.registerSystem("game-manager", {
       z: 0,
     };
 
-    // Décaler la cible légèrement hors de la surface
-    position.add(normalizedNormal.clone().multiplyScalar(0.2));
+    // Décaler la cible suffisamment hors de la surface pour éviter les collisions
+    // Augmenté à 0.20m (20cm) pour tenir compte de la taille des cibles
+    position.add(normalizedNormal.clone().multiplyScalar(0.20));
 
     console.log(
       `🎯 Spawn alignment: ${surfaceType} | normal=(${normalizedNormal.x.toFixed(2)},${normalizedNormal.y.toFixed(2)},${normalizedNormal.z.toFixed(2)}) | rotation=(${rotation.x.toFixed(0)},${rotation.y.toFixed(0)},${rotation.z.toFixed(0)})`,
@@ -345,21 +462,119 @@ AFRAME.registerSystem("game-manager", {
     }
   },
 
+  calculateAvailableMovementSpace: function (spawnPosition, surfaceNormal) {
+    // Deterner l'espace disponible pour le mouvement (raycast dans plusieurs directions)
+    const raycaster = new THREE.Raycaster();
+    
+    // Directions de test (axes perpendiculaires à la surface)
+    const rightDir = new THREE.Vector3(-surfaceNormal.z, 0, surfaceNormal.x).normalize();
+    const upDir = new THREE.Vector3(0, 1, 0);
+    
+    // Distance max avant collision pour chaque direction
+    let maxAmplitudeX = 0.5;  // Largeur (gauche/droite)
+    let maxAmplitudeY = 0.3;  // Hauteur (haut/bas)
+    
+    // Tester les collisions en 4 directions (gauche, droite, haut, bas)
+    const testDirections = [
+      { dir: rightDir.clone().multiplyScalar(1), axis: 'X' },
+      { dir: rightDir.clone().multiplyScalar(-1), axis: 'X' },
+      { dir: upDir.clone().multiplyScalar(1), axis: 'Y' },
+      { dir: upDir.clone().multiplyScalar(-1), axis: 'Y' }
+    ];
+    
+    const scene = this.el.sceneEl;
+    const collisionObjects = [];
+    
+    // Collecter TOUS les objets 3D pour raycast (scene mesh réel inclus)
+    scene.object3D.traverse((object) => {
+      if (object.isMesh && object.visible) {
+        // Vérifier que l'objet n'est pas une cible ou un élément HUD
+        let isTarget = false;
+        let isHUD = false;
+        
+        // Remonter la hiérarchie pour vérifier les attributs
+        let parent = object;
+        while (parent) {
+          if (parent.el) {
+            if (parent.el.hasAttribute('target-behavior') || parent.el.hasAttribute('flying-target')) {
+              isTarget = true;
+              break;
+            }
+            if (parent.el.hasAttribute('hud-element') || parent.el.classList.contains('clickable')) {
+              isHUD = true;
+              break;
+            }
+          }
+          parent = parent.parent;
+        }
+        
+        if (!isTarget && !isHUD) {
+          collisionObjects.push(object);
+        }
+      }
+    });
+    
+    console.log(`🔍 Raycast: ${collisionObjects.length} objets de collision détectés`);
+    
+    // Raycast dans chaque direction
+    let testCount = 0;
+    for (const test of testDirections) {
+      raycaster.set(spawnPosition, test.dir);
+      const hits = raycaster.intersectObjects(collisionObjects, false);
+      
+      if (hits.length > 0) {
+        const distance = hits[0].distance;
+        // Marge de sécurité de 15cm
+        const safeDistance = Math.max(0.05, distance - 0.15);
+        
+        if (test.axis === 'X') {
+          maxAmplitudeX = Math.min(maxAmplitudeX, safeDistance);
+        } else {
+          maxAmplitudeY = Math.min(maxAmplitudeY, safeDistance);
+        }
+        testCount++;
+        console.log(`  Direction ${test.axis}: collision à ${distance.toFixed(2)}m, safe=${safeDistance.toFixed(2)}m`);
+      }
+    }
+    
+    // S'assurer qu'il y a un minimum de mouvement
+    const finalAmplitudeX = Math.max(maxAmplitudeX, 0.05); // 5cm minimum
+    const finalAmplitudeY = Math.max(maxAmplitudeY, 0.05); // 5cm minimum
+    
+    console.log(`💪 Amplitudes finales: X=${finalAmplitudeX.toFixed(3)}m, Y=${finalAmplitudeY.toFixed(3)}m (${testCount} collisions détectées)`);
+    
+    return { x: finalAmplitudeX, y: finalAmplitudeY };
+  },
+
   spawnRandomTarget: function () {
     const target = document.createElement("a-entity");
     const targetId = `target-${Date.now()}`;
 
     let spawnData = null;
+    let spawnSource = "none";
 
+    // Essayer d'abord le hit-test (surfaces réelles)
     if (this.sceneMeshHandler && this.sceneMeshHandler.isHitTestActive()) {
       const detected = this.sceneMeshHandler.getDetectedSurface();
+      console.log("🔍 Hit-test détecté:", detected ? "OUI" : "NON", detected);
       if (detected) {
         spawnData = this.calculateSpawnFromHitTest(detected);
+        if (spawnData) {
+          spawnSource = "hit-test (surfaces réelles)";
+          console.log("✅ Spawn depuis hit-test");
+        }
       }
+    } else {
+      console.log("⚠️ Hit-test non actif, fallback vers surface-detector");
     }
 
+    // Fallback vers surface-detector
     if (!spawnData && this.surfaceDetector) {
       spawnData = this.surfaceDetector.getRandomSpawnPoint();
+      if (spawnData) {
+        spawnSource = "surface-detector (fallback)";
+        console.log("⚠️ Spawn depuis surface-detector (fallback)");
+      }
     }
 
     if (!spawnData) {
@@ -414,6 +629,19 @@ AFRAME.registerSystem("game-manager", {
       return;
     }
 
+    // 🚫 Empêcher le spawn au même endroit que la cible précédente
+    if (this.lastSpawnPosition) {
+      const distanceToPrevious = pos.distanceTo(this.lastSpawnPosition);
+      if (distanceToPrevious < 0.3) {
+        console.log(
+          "⚠️ Spawn rejeté (même position que précédente)",
+          distanceToPrevious.toFixed(2) + "m",
+        );
+        this.debugLog(`Spawn: same pos as prev ${distanceToPrevious.toFixed(2)}m`);
+        return;
+      }
+    }
+
     // 🎯 La rotation est déjà définie correctement dans calculateSpawnFromHitTest()
     // Pas besoin de correction supplémentaire pour les surfaces verticales
 
@@ -423,7 +651,18 @@ AFRAME.registerSystem("game-manager", {
       if (existing.object3D.position.distanceTo(pos) < minDistance) return;
     }
 
-    const scale = 0.2 + Math.random() * 0.3;
+    // 📏 Taille INVERSEMENT proportionnelle à la distance pour le réalisme
+    // Distance min=1.5m => scale max=0.70, Distance max=12m => scale min=0.30
+    const maxScale = 0.70;
+    const minScale = 0.30;
+    const maxDistance = 12;
+    const minDistanceSpawn = 1.5;
+    // Formula: plus loin = plus petit
+    const scale = maxScale - ((distance - minDistanceSpawn) / (maxDistance - minDistanceSpawn)) * (maxScale - minScale);
+
+    console.log(
+      `📏 Cible: distance=${distance.toFixed(1)}m → scale=${scale.toFixed(3)} (plus loin = plus petit)`,
+    );
 
     let points = 10;
     let hp = 1;
@@ -441,12 +680,16 @@ AFRAME.registerSystem("game-manager", {
     }
 
     target.id = targetId;
-    target.setAttribute("position", pos);
+    target.setAttribute("position", `${pos.x} ${pos.y} ${pos.z}`);
     target.setAttribute("rotation", spawnData.rotation);
     target.setAttribute("scale", `${scale} ${scale} ${scale}`);
-    const isFlyingTarget = Math.random() < 0.3;
+    
+    // ✈️ TEST MODE: ALL targets are flying (phase system disabled)
+    const isFlyingTarget = true;
     const surfaceType = "vertical";
     target.setAttribute("surface-type", surfaceType);
+
+    console.log(`🎯 Cible créée: isFlyingTarget=${isFlyingTarget} (ALWAYS TRUE IN TEST MODE)`);
 
     if (!isFlyingTarget) {
       target.setAttribute("static-body", {
@@ -461,22 +704,11 @@ AFRAME.registerSystem("game-manager", {
       movable: false,
     });
 
-    if (isFlyingTarget) {
-      // Mouvement dans un plan vertical (X/Y) pour rester droit
-      target.setAttribute("flying-target", {
-        mode: "sagittal",
-        amplitudeX: 0.5 + Math.random() * 0.4,
-        amplitudeY: 0.2 + Math.random() * 0.3,
-        amplitudeZ: 0.0,
-        speed: 0.9 + Math.random() * 0.6,
-        enabled: true,
-      });
-    }
-
     // Créer la géométrie de la cible avec fallback visuel
     const modelEntity = document.createElement("a-entity");
     modelEntity.setAttribute("gltf-model", "#target-model");
-    // Rotation supplémentaire du modèle pour corriger l'orientation du GLB
+    // Rotation du modèle 3D : la cible par défaut regarde vers -Z (forward)
+    // Si le modèle apparaît de profil, ajustez la rotation Y (0, 90, 180, ou 270)
     modelEntity.setAttribute("rotation", "0 0 0");
     modelEntity.setAttribute("scale", "1 1 1");
 
@@ -490,24 +722,48 @@ AFRAME.registerSystem("game-manager", {
       shader: "flat",
       opacity: 0.9,
     });
+    // Cacher la sphère fallback par défaut
+    fallbackSphere.setAttribute("visible", false);
 
-    // Appliquer la rotation seulement après chargement du modèle
+    // Afficher le modèle après chargement (la sphère est déjà cachée)
     modelEntity.addEventListener("model-loaded", () => {
-      fallbackSphere.setAttribute("visible", false);
       this.debugLog("Target model loaded");
     });
 
     modelEntity.addEventListener("model-error", (evt) => {
       const errorDetail = evt?.detail?.src || "unknown";
+      console.warn(`⚠️ Erreur chargement modèle cible: ${errorDetail}`);
       this.debugLog(`Target model error: ${errorDetail}`);
+      // Afficher la sphère fallback en cas d'erreur
+      fallbackSphere.setAttribute("visible", true);
     });
 
     target.appendChild(modelEntity);
     target.appendChild(fallbackSphere);
 
+    // Ajouter à la scène D'ABORD
     this.el.appendChild(target);
     this.activeTargets.push(target);
     this.firstTargetSpawned = true;
+
+    // TOUTES les cibles sont mobiles avec mouvement sinusoïdal
+    // Calculer l'amplitude de mouvement sécurisée pour éviter les collisions
+    const amplitudes = this.calculateAvailableMovementSpace(pos, spawnData.normal);
+    
+    console.log(`✈️ Ajout mouvement sinusoïdal: amplitudeX=${amplitudes.x.toFixed(3)}m, amplitudeY=${amplitudes.y.toFixed(3)}m`);
+    
+    // Mouvement dans un plan sagittal (X/Y) pour rester face à la caméra
+    target.setAttribute("flying-target", {
+      mode: "sagittal",
+      amplitudeX: amplitudes.x,
+      amplitudeY: amplitudes.y,
+      amplitudeZ: 0.0,
+      speed: 0.8 + Math.random() * 0.6, // Vitesse entre 0.8 et 1.4
+      enabled: true,
+    });
+
+    // 🚫 Sauvegarder la position de spawn pour éviter les répétitions
+    this.lastSpawnPosition = pos.clone();
 
     if (this.useAnchors && this.anchorManager) {
       setTimeout(() => {
@@ -516,7 +772,7 @@ AFRAME.registerSystem("game-manager", {
     }
 
     console.log(
-      `🎯 Nouvelle cible spawned: ${targetId} (${points}pts, ${hp}HP, ${surfaceType})`,
+      `🎯 Nouvelle cible spawned: ${targetId} | source=${spawnSource} | (${points}pts, ${hp}HP) | pos=(${pos.x.toFixed(2)},${pos.y.toFixed(2)},${pos.z.toFixed(2)}) | rot=(${spawnData.rotation.x.toFixed(0)},${spawnData.rotation.y.toFixed(0)},${spawnData.rotation.z.toFixed(0)}) | real=${spawnData.isRealSurface ? "OUI" : "NON"} | distance=${distance.toFixed(1)}m`,
     );
   },
 
@@ -681,6 +937,13 @@ AFRAME.registerSystem("game-manager", {
       clearInterval(this.spawnTimer);
       this.spawnTimer = null;
     }
+
+    // Arrêter les phases de mouvement
+    if (this.movementPhaseTimer) {
+      clearInterval(this.movementPhaseTimer);
+      this.movementPhaseTimer = null;
+    }
+
     console.log("🎮 Jeu arrêté");
   },
 

@@ -17,6 +17,8 @@ import "./components/webxr-anchor-manager.js";
 import "./components/score-hud.js";
 import "./components/vr-menu.js";
 import "./components/end-menu.js";
+import "./components/pause-menu.js"; // ✨ Menu de pause
+import "./components/pause-button.js"; // ✨ Bouton pause en HUD
 import "./components/debug-vr-log.js";
 
 // Import des systèmes
@@ -35,14 +37,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Afficher les instructions
     showInstructions();
-
-    // Panneau debug VR (coin haut-gauche de la scene)
-    if (!scene.querySelector("[debug-vr-log]")) {
-      const debugPanel = document.createElement("a-entity");
-      debugPanel.setAttribute("debug-vr-log", { maxLines: 6, width: 1.6 });
-      debugPanel.setAttribute("position", "-1.2 2.0 -2.5");
-      scene.appendChild(debugPanel);
-    }
   });
 });
 

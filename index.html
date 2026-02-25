@@ -164,24 +164,11 @@
       <!-- Menu VR flottant (instructions + bouton jouer) -->
       <a-entity vr-menu></a-entity>
 
-      <!-- Cible avec comportement -->
-      <a-entity
-        id="target-1"
-        position="0 1.5 -5"
-        rotation="0 0 0"
-        target-behavior="points: 10; hp: 3; movable: false"
-      >
-        <a-entity gltf-model="#target-model" scale="1 1 1"></a-entity>
-      </a-entity>
+      <!-- Menu de pause -->
+      <a-entity pause-menu></a-entity>
 
-      <!-- Cible statique -->
-      <a-entity
-        id="target-2"
-        position="-2 1.5 -6"
-        target-behavior="points: 20; hp: 2; movable: false"
-      >
-        <a-entity gltf-model="#target-model" scale="1 1 1"></a-entity>
-      </a-entity>
+      <!-- Bouton pause en HUD (coin supérieur droit) -->
+      <a-entity pause-button></a-entity>
 
       <!-- Caméra avec contrôles VR -->
       <a-entity id="rig" position="0 1.6 0" bow-draw-system>

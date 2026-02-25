@@ -283,7 +283,9 @@ AFRAME.registerComponent("surface-detector", {
   getRandomVerticalSpawnPoint: function () {
     if (this.surfaces.vertical.length === 0) return null;
 
-    const surface = this.surfaces.vertical[0];
+    // 🎲 Sélection aléatoire d'une surface verticale au lieu de toujours la première
+    const randomIndex = Math.floor(Math.random() * this.surfaces.vertical.length);
+    const surface = this.surfaces.vertical[randomIndex];
     const normal = surface.outwardNormal || new THREE.Vector3(0, 0, 1);
     const position = surface.position.clone();
 

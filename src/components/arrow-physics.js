@@ -215,6 +215,7 @@ tick: function (time, deltaTime) {
     this.hasCollided = true;
 
     const impactPoint = intersection.point.clone();
+    let impactNormal = null;
 
     // Trouver l'entité touchée
     let hitEntity = null;
@@ -244,20 +245,61 @@ tick: function (time, deltaTime) {
     if (intersection.face && intersection.face.normal) {
       const normalWorld = intersection.face.normal.clone();
       normalWorld.transformDirection(intersection.object.matrixWorld);
+      impactNormal = normalWorld.clone().normalize();
       impactPoint.add(normalWorld.multiplyScalar(0.1));
     }
 
     if (hitType === "target" && hitEntity) {
       this.attachArrowToTarget(hitEntity, impactPoint);
     } else {
-      // Planter la flèche à la position d'impact
-      this.el.object3D.position.copy(impactPoint);
+      // Planter la flèche dans la surface touchée
+      this.attachArrowToSurface(hitEntity, impactPoint, impactNormal);
     }
 
     // Retirer la flèche après 5 secondes
     setTimeout(() => {
       this.animateRemoval();
     }, 5000);
+  },
+
+  attachArrowToSurface: function (surfaceEl, worldImpactPoint, worldNormal) {
+    // Positionner la flèche au point d'impact
+    this.el.object3D.position.copy(worldImpactPoint);
+
+    // Enfoncement variable pour un rendu plus naturel (en metres)
+    const penetrationDepth = 0.04 + Math.random() * 0.06;
+
+    // Aligner la flèche avec la normale (pointe vers la surface)
+    if (worldNormal) {
+      const inwardNormal = worldNormal.clone().multiplyScalar(-1).normalize();
+      const targetQuaternion = new THREE.Quaternion();
+      targetQuaternion.setFromUnitVectors(
+        new THREE.Vector3(0, 0, -1),
+        inwardNormal,
+      );
+      this.el.object3D.quaternion.copy(targetQuaternion);
+
+      // Pousser la flèche dans la surface
+      this.el.object3D.position.add(
+        inwardNormal.clone().multiplyScalar(penetrationDepth),
+      );
+    }
+
+    // Attacher à la surface pour rester fixe si elle bouge
+    if (surfaceEl && surfaceEl.object3D) {
+      const localImpact = surfaceEl.object3D.worldToLocal(
+        worldImpactPoint.clone(),
+      );
+      surfaceEl.appendChild(this.el);
+      this.el.object3D.position.copy(localImpact);
+
+      if (worldNormal) {
+        const inwardLocal = worldNormal.clone().multiplyScalar(-1).normalize();
+        this.el.object3D.position.add(
+          inwardLocal.multiplyScalar(penetrationDepth),
+        );
+      }
+    }
   },
 
   animateRemoval: function () {
