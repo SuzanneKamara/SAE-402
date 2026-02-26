@@ -12,6 +12,9 @@ AFRAME.registerComponent("debug-vr-log", {
   init: function () {
     this.lines = [];
 
+    // Marquer comme élément HUD pour exclure des collisions
+    this.el.setAttribute("hud-element", "");
+
     const panel = document.createElement("a-entity");
     panel.setAttribute("geometry", {
       primitive: "plane",
@@ -28,11 +31,12 @@ AFRAME.registerComponent("debug-vr-log", {
     this.el.appendChild(panel);
 
     this.textEl = document.createElement("a-text");
-    this.textEl.setAttribute("value", "VR Debug\n...");
-    this.textEl.setAttribute("align", "left");
-    this.textEl.setAttribute("color", "#00ff99");
-    this.textEl.setAttribute("width", this.data.width);
-    this.textEl.setAttribute("position", "-0.75 0.2 0.01");
+    this.textEl.setAttribute("value", "VR Debug Ready\nWaiting...");
+    this.textEl.setAttribute("align", "center");
+    this.textEl.setAttribute("color", "#FFFFFF");
+    this.textEl.setAttribute("width", this.data.width * 0.9);
+    this.textEl.setAttribute("wrap-count", 40);
+    this.textEl.setAttribute("position", "0 0 0.01");
     this.el.appendChild(this.textEl);
 
     window.vrDebugLog = (message) => {
@@ -43,6 +47,11 @@ AFRAME.registerComponent("debug-vr-log", {
       }
       this.textEl.setAttribute("value", this.lines.join("\n"));
     };
+    
+    // 🧪 Test immédiat
+    console.log("✅ debug-vr-log initialisé");
+    window.vrDebugLog("VR Debug Ready!");
+    window.vrDebugLog("Waiting for game...");
   },
 
   tick: function () {

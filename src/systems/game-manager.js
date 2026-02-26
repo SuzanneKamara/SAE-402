@@ -128,6 +128,15 @@ AFRAME.registerSystem("game-manager", {
     this.gameRunning = true;
     this.totalScore = 0;
     this.totalHits = 0;
+    
+    // 🧪 TEST: Vérifier que le debug VR fonctionne
+    console.log("🎮 GAME STARTED!");
+    if (window.vrDebugLog) {
+      window.vrDebugLog("=== GAME START ===");
+      window.vrDebugLog("Debug VR OK!");
+    } else {
+      console.error("❌ window.vrDebugLog n'existe pas!");
+    }
     this.totalArrowsShot = 0;
     this.gameTime = 60;
     this.el.setAttribute("state", "gameStarted", true);
@@ -407,9 +416,10 @@ AFRAME.registerSystem("game-manager", {
       z: 0,
     };
 
-    // Décaler la cible suffisamment hors de la surface pour éviter les collisions
-    // Augmenté à 0.20m (20cm) pour tenir compte de la taille des cibles
-    position.add(normalizedNormal.clone().multiplyScalar(0.20));
+    // ✈️ NOUVEAU: Spawner la cible dans l'espace libre, PAS sur la surface
+    // Décaler de 1.5-2.5m depuis la surface pour un spawn central dans l'espace
+    const spawnDistance = 1.5 + Math.random() * 1.0; // 1.5m à 2.5m de la surface
+    position.add(normalizedNormal.clone().multiplyScalar(spawnDistance));
 
     console.log(
       `🎯 Spawn alignment: ${surfaceType} | normal=(${normalizedNormal.x.toFixed(2)},${normalizedNormal.y.toFixed(2)},${normalizedNormal.z.toFixed(2)}) | rotation=(${rotation.x.toFixed(0)},${rotation.y.toFixed(0)},${rotation.z.toFixed(0)})`,
@@ -463,34 +473,47 @@ AFRAME.registerSystem("game-manager", {
   },
 
   calculateAvailableMovementSpace: function (spawnPosition, surfaceNormal) {
-    // Deterner l'espace disponible pour le mouvement (raycast dans plusieurs directions)
+    // ✈️ Déterminer l'espace disponible AUTOUR de la position de spawn
+    // Les surfaces deviennent des LIMITES pour le mouvement circulaire
     const raycaster = new THREE.Raycaster();
+    raycaster.near = 0.01; // Distance minimale de détection
+    raycaster.far = 5.0;   // Distance maximale de détection
     
-    // Directions de test (axes perpendiculaires à la surface)
+    // Directions de test (8 directions pour meilleure couverture)
     const rightDir = new THREE.Vector3(-surfaceNormal.z, 0, surfaceNormal.x).normalize();
     const upDir = new THREE.Vector3(0, 1, 0);
+    const forwardDir = surfaceNormal.clone().negate(); // Direction opposée à la surface
     
-    // Distance max avant collision pour chaque direction
-    let maxAmplitudeX = 0.5;  // Largeur (gauche/droite)
-    let maxAmplitudeY = 0.3;  // Hauteur (haut/bas)
+    // Distance max avant collision pour chaque direction (limites par défaut généreuses)
+    let maxAmplitudeX = 1.2;  // Largeur (gauche/droite)
+    let maxAmplitudeY = 1.0;  // Hauteur (haut/bas)
+    let maxAmplitudeZ = 0.8;  // Profondeur (avant/arrière)
     
-    // Tester les collisions en 4 directions (gauche, droite, haut, bas)
+    // Tester les collisions en 12 directions (gauche, droite, haut, bas, avant, arrière + diagonales)
     const testDirections = [
-      { dir: rightDir.clone().multiplyScalar(1), axis: 'X' },
-      { dir: rightDir.clone().multiplyScalar(-1), axis: 'X' },
-      { dir: upDir.clone().multiplyScalar(1), axis: 'Y' },
-      { dir: upDir.clone().multiplyScalar(-1), axis: 'Y' }
+      { dir: rightDir.clone(), axis: 'X', name: 'droite' },
+      { dir: rightDir.clone().negate(), axis: 'X', name: 'gauche' },
+      { dir: upDir.clone(), axis: 'Y', name: 'haut' },
+      { dir: upDir.clone().negate(), axis: 'Y', name: 'bas' },
+      { dir: forwardDir.clone(), axis: 'Z', name: 'avant' },
+      { dir: forwardDir.clone().negate(), axis: 'Z', name: 'arrière' },
+      // Diagonales pour meilleure détection
+      { dir: rightDir.clone().add(upDir).normalize(), axis: 'XY', name: 'haut-droite' },
+      { dir: rightDir.clone().negate().add(upDir).normalize(), axis: 'XY', name: 'haut-gauche' },
+      { dir: rightDir.clone().add(upDir.clone().negate()).normalize(), axis: 'XY', name: 'bas-droite' },
+      { dir: rightDir.clone().negate().add(upDir.clone().negate()).normalize(), axis: 'XY', name: 'bas-gauche' }
     ];
     
     const scene = this.el.sceneEl;
     const collisionObjects = [];
     
-    // Collecter TOUS les objets 3D pour raycast (scene mesh réel inclus)
+    // Collecter les objets 3D pour raycast (exclure cibles et HUD)
     scene.object3D.traverse((object) => {
-      if (object.isMesh && object.visible) {
+      if (object.isMesh && object.visible && object.geometry) {
         // Vérifier que l'objet n'est pas une cible ou un élément HUD
         let isTarget = false;
         let isHUD = false;
+        let isArrow = false;
         
         // Remonter la hiérarchie pour vérifier les attributs
         let parent = object;
@@ -504,46 +527,80 @@ AFRAME.registerSystem("game-manager", {
               isHUD = true;
               break;
             }
+            if (parent.el.hasAttribute('arrow-physics')) {
+              isArrow = true;
+              break;
+            }
           }
           parent = parent.parent;
         }
         
-        if (!isTarget && !isHUD) {
+        if (!isTarget && !isHUD && !isArrow) {
           collisionObjects.push(object);
         }
       }
     });
     
-    console.log(`🔍 Raycast: ${collisionObjects.length} objets de collision détectés`);
+    console.log(`🔍 Raycast collision: ${collisionObjects.length} objets analysés`);
+    
+    // Debug VR
+    if (window.vrDebugLog) {
+      window.vrDebugLog(`Mesh detect: ${collisionObjects.length} objects`);
+    }
     
     // Raycast dans chaque direction
-    let testCount = 0;
+    let hitCount = 0;
+    const detailedHits = [];
+    
     for (const test of testDirections) {
       raycaster.set(spawnPosition, test.dir);
       const hits = raycaster.intersectObjects(collisionObjects, false);
       
       if (hits.length > 0) {
         const distance = hits[0].distance;
-        // Marge de sécurité de 15cm
-        const safeDistance = Math.max(0.05, distance - 0.15);
+        // Marge de sécurité de 20cm pour éviter que la cible touche les murs
+        const safeDistance = Math.max(0.10, distance - 0.20);
         
         if (test.axis === 'X') {
           maxAmplitudeX = Math.min(maxAmplitudeX, safeDistance);
-        } else {
+        } else if (test.axis === 'Y') {
           maxAmplitudeY = Math.min(maxAmplitudeY, safeDistance);
+        } else if (test.axis === 'Z') {
+          maxAmplitudeZ = Math.min(maxAmplitudeZ, safeDistance);
+        } else if (test.axis === 'XY') {
+          // Diagonale: limiter à la fois X et Y
+          maxAmplitudeX = Math.min(maxAmplitudeX, safeDistance * 0.7);
+          maxAmplitudeY = Math.min(maxAmplitudeY, safeDistance * 0.7);
         }
-        testCount++;
-        console.log(`  Direction ${test.axis}: collision à ${distance.toFixed(2)}m, safe=${safeDistance.toFixed(2)}m`);
+        
+        hitCount++;
+        detailedHits.push({ direction: test.name, dist: distance.toFixed(2), safe: safeDistance.toFixed(2) });
       }
     }
     
-    // S'assurer qu'il y a un minimum de mouvement
-    const finalAmplitudeX = Math.max(maxAmplitudeX, 0.05); // 5cm minimum
-    const finalAmplitudeY = Math.max(maxAmplitudeY, 0.05); // 5cm minimum
+    // Log détaillé des collisions
+    if (hitCount > 0) {
+      console.log(`🎯 ${hitCount} collisions détectées:`);
+      detailedHits.slice(0, 3).forEach(hit => {
+        console.log(`   ${hit.direction}: ${hit.dist}m (safe: ${hit.safe}m)`);
+      });
+    } else {
+      console.log(`✨ Aucune collision détectée - espace libre complet`);
+    }
     
-    console.log(`💪 Amplitudes finales: X=${finalAmplitudeX.toFixed(3)}m, Y=${finalAmplitudeY.toFixed(3)}m (${testCount} collisions détectées)`);
+    // S'assurer qu'il y a un minimum de mouvement VISIBLE
+    const finalAmplitudeX = Math.max(maxAmplitudeX, 0.35); // 35cm minimum
+    const finalAmplitudeY = Math.max(maxAmplitudeY, 0.30); // 30cm minimum
+    const finalAmplitudeZ = Math.max(maxAmplitudeZ, 0.25); // 25cm minimum
     
-    return { x: finalAmplitudeX, y: finalAmplitudeY };
+    console.log(`💪 Zone de mouvement calculée: X=${finalAmplitudeX.toFixed(2)}m, Y=${finalAmplitudeY.toFixed(2)}m, Z=${finalAmplitudeZ.toFixed(2)}m`);
+    
+    // Debug VR
+    if (window.vrDebugLog) {
+      window.vrDebugLog(`Limits: X=${finalAmplitudeX.toFixed(2)} Y=${finalAmplitudeY.toFixed(2)}`);
+    }
+    
+    return { x: finalAmplitudeX, y: finalAmplitudeY, z: finalAmplitudeZ };
   },
 
   spawnRandomTarget: function () {
@@ -684,6 +741,8 @@ AFRAME.registerSystem("game-manager", {
     target.setAttribute("rotation", spawnData.rotation);
     target.setAttribute("scale", `${scale} ${scale} ${scale}`);
     
+    console.log(`📍 Position de la cible définie: (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})`);
+    
     // ✈️ TEST MODE: ALL targets are flying (phase system disabled)
     const isFlyingTarget = true;
     const surfaceType = "vertical";
@@ -722,8 +781,23 @@ AFRAME.registerSystem("game-manager", {
       shader: "flat",
       opacity: 0.9,
     });
-    // Cacher la sphère fallback par défaut
-    fallbackSphere.setAttribute("visible", false);
+    // 🧪 TEST: FORCER VISIBLE pour voir si la sphère bouge
+    fallbackSphere.setAttribute("visible", true);
+    
+    // 🧪 TEST CRITIQUE: Ajouter un cube VERT wireframe très visible
+    const testCube = document.createElement("a-entity");
+    testCube.setAttribute("geometry", {
+      primitive: "box",
+      width: 0.4,
+      height: 0.4,
+      depth: 0.4
+    });
+    testCube.setAttribute("material", {
+      color: "#00FF00",
+      shader: "flat",
+      wireframe: true
+    });
+    testCube.setAttribute("position", "0 0.3 0"); // Au-dessus de la cible
 
     // Afficher le modèle après chargement (la sphère est déjà cachée)
     modelEntity.addEventListener("model-loaded", () => {
@@ -740,27 +814,129 @@ AFRAME.registerSystem("game-manager", {
 
     target.appendChild(modelEntity);
     target.appendChild(fallbackSphere);
+    target.appendChild(testCube); // 🧪 TEST: Cube vert pour voir le mouvement
 
     // Ajouter à la scène D'ABORD
     this.el.appendChild(target);
     this.activeTargets.push(target);
     this.firstTargetSpawned = true;
 
-    // TOUTES les cibles sont mobiles avec mouvement sinusoïdal
-    // Calculer l'amplitude de mouvement sécurisée pour éviter les collisions
-    const amplitudes = this.calculateAvailableMovementSpace(pos, spawnData.normal);
+    // TOUTES les cibles sont mobiles avec mouvement circulaire
+    // Calculer le rayon maximum et le plan de rotation basés sur les limites détectées
     
-    console.log(`✈️ Ajout mouvement sinusoïdal: amplitudeX=${amplitudes.x.toFixed(3)}m, amplitudeY=${amplitudes.y.toFixed(3)}m`);
+    // 🔍 DEBUG: Vérifier que la normale existe
+    if (!spawnData.normal) {
+      console.error(`❌ PROBLÈME: spawnData.normal est undefined!`, spawnData);
+      // Fallback: utiliser une normale par défaut
+      spawnData.normal = new THREE.Vector3(0, 0, 1);
+    }
     
-    // Mouvement dans un plan sagittal (X/Y) pour rester face à la caméra
-    target.setAttribute("flying-target", {
-      mode: "sagittal",
-      amplitudeX: amplitudes.x,
-      amplitudeY: amplitudes.y,
-      amplitudeZ: 0.0,
-      speed: 0.8 + Math.random() * 0.6, // Vitesse entre 0.8 et 1.4
-      enabled: true,
-    });
+    console.log(`🔍 Normal avant calculateAvailableMovementSpace:`, spawnData.normal);
+    const limits = this.calculateAvailableMovementSpace(pos, spawnData.normal);
+    console.log(`🔍 Limites calculées:`, limits);
+    
+    // Choisir le plan de rotation optimal selon les limites disponibles
+    // Privilégier le plan qui offre le plus d'espace de mouvement
+    let plane = "xy"; // Par défaut: plan vertical
+    let radius = 0;
+    
+    // Calculer le rayon optimal pour chaque plan
+    const radiusXY = Math.min(limits.x, limits.y) * 0.75; // Plan vertical (gauche-droite, haut-bas)
+    const radiusXZ = Math.min(limits.x, limits.z) * 0.75; // Plan horizontal (gauche-droite, avant-arrière)
+    const radiusYZ = Math.min(limits.y, limits.z) * 0.75; // Plan sagittal (haut-bas, avant-arrière)
+    
+    // Choisir le plan avec le plus grand rayon possible
+    if (radiusXY >= radiusXZ && radiusXY >= radiusYZ) {
+      plane = "xy";
+      radius = radiusXY;
+    } else if (radiusXZ >= radiusYZ) {
+      plane = "xz";
+      radius = radiusXZ;
+    } else {
+      plane = "yz";
+      radius = radiusYZ;
+    }
+    
+    // S'assurer d'un rayon minimum visible
+    radius = Math.max(radius, 0.50); // 🧪 TEST: 50cm minimum pour mouvement TRÈS visible
+    
+    // Déterminer le nom du plan pour les logs
+    const planeNames = { xy: "vertical", xz: "horizontal", yz: "sagittal" };
+    const planeName = planeNames[plane] || plane;
+    
+    console.log(`⭕ Configuration mouvement circulaire:`);
+    console.log(`   📐 Plan optimal: ${planeName} (${plane})`);
+    console.log(`   📏 Rayon: ${radius.toFixed(2)}m`);
+    console.log(`   🎯 Limites: X=${limits.x.toFixed(2)}m, Y=${limits.y.toFixed(2)}m, Z=${limits.z.toFixed(2)}m`);
+    console.log(`   🔄 Rayons disponibles: XY=${radiusXY.toFixed(2)}m, XZ=${radiusXZ.toFixed(2)}m, YZ=${radiusYZ.toFixed(2)}m`);
+    
+    // Debug VR - Afficher la configuration du mouvement
+    if (window.vrDebugLog) {
+      window.vrDebugLog(`Target spawn: ${plane} r=${radius.toFixed(2)}m`);
+    }
+    
+    // ⚠️ CORRECTION: Augmenter le délai pour s'assurer que l'entité est complètement initialisée
+    // Attendre que l'entité soit complètement initialisée avant d'ajouter le composant de mouvement
+    setTimeout(() => {
+      // Vérifier que l'entité est toujours dans la scène
+      if (!target.parentNode) {
+        console.error(`❌ Entité ${targetId} n'est plus dans la scène!`);
+        return;
+      }
+
+      // ✅ CORRECTION: Forcer la mise à jour de la matrice world avant de capturer la position
+      target.object3D.updateMatrixWorld(true);
+      
+      // Vérifier la position de l'entité
+      const currentPos = target.object3D.position;
+      console.log(`🔍 Position vérifiée avant ajout flying-target: (${currentPos.x.toFixed(2)}, ${currentPos.y.toFixed(2)}, ${currentPos.z.toFixed(2)})`);
+
+      // Mouvement circulaire pour des cibles volantes dans l'espace libre
+      const speed = 0.6 + Math.random() * 0.8; // Vitesse angulaire entre 0.6 et 1.4 rad/s
+      
+      console.log(`🎯 Application du composant flying-target avec:`, {
+        radius: radius.toFixed(2),
+        plane: plane,
+        speed: speed.toFixed(1),
+        maxX: limits.x.toFixed(2),
+        maxY: limits.y.toFixed(2),
+        maxZ: limits.z.toFixed(2),
+        enabled: true
+      });
+      
+      // Debug VR
+      if (window.vrDebugLog) {
+        window.vrDebugLog(`Add FlyTarget: ${targetId} ${plane} r=${radius.toFixed(1)}m`);
+      }
+      
+      target.setAttribute("flying-target", {
+        radius: radius, // Rayon du cercle optimisé
+        plane: plane, // Plan de rotation optimal (xy, xz, ou yz)
+        speed: speed, // Vitesse angulaire
+        maxX: limits.x, // Limites pour vérification stricte
+        maxY: limits.y,
+        maxZ: limits.z,
+        enabled: true,
+      });
+      
+      // 🧪 TEST: Ajouter un composant ultra-simple pour vérifier que tick() fonctionne
+      target.setAttribute("test-tick", { enabled: true });
+      
+      // 🧪 TEST CRITIQUE: Oscillation simple LEFT/RIGHT/UP
+      target.setAttribute("simple-oscillate", { amplitude: 0.6, speed: 1.5 });
+      
+      console.log(`✅ Composant flying-target configuré: rayon=${radius.toFixed(2)}m, vitesse=${speed.toFixed(1)} rad/s, plan=${planeName}`);
+      
+      // Vérifier après 100ms que le composant fonctionne
+      setTimeout(() => {
+        if (target.components && target.components['flying-target']) {
+          const comp = target.components['flying-target'];
+          console.log(`🔍 Vérification composant: tickCount=${comp.tickCount || 0}, centerCaptured=${comp.centerCaptured}, enabled=${comp.data.enabled}`);
+        } else {
+          console.error(`❌ Composant flying-target non trouvé sur ${targetId}!`);
+        }
+      }, 100);
+    }, 200); // ✅ Augmenté de 50ms à 200ms pour une meilleure fiabilité
 
     // 🚫 Sauvegarder la position de spawn pour éviter les répétitions
     this.lastSpawnPosition = pos.clone();
