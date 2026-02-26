@@ -27,15 +27,8 @@ AFRAME.registerComponent("flying-target", {
   init: function () {
     this.centerPosition = new THREE.Vector3(); // Position centrale du cercle (réutilisable)
     this.centerCaptured = false;
-    this.startAngle = Math.random() * Math.PI * 2; // Angle de départ aléatoire
-    this.currentAngle = this.startAngle;
-    this.lastLogTime = 0;
+    this.time = 0; // 🔥 SIMPLIFICATION: Juste un compteur de temps
     this.tickCount = 0;
-    
-    // Objets helper THREE.js réutilisables (PERFORMANCE OPTIMIZATION)
-    // Évite les allocations mémoire répétées dans tick()
-    this.helperVector = new THREE.Vector3();
-    this.adaptiveRadius = { x: 0, y: 0, z: 0 }; // Cache pour rayons adaptatifs
     
     // Écouteurs d'événements pour la pause/reprise du jeu
     this.onGamePaused = this.pause.bind(this);

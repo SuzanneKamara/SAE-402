@@ -781,23 +781,8 @@ AFRAME.registerSystem("game-manager", {
       shader: "flat",
       opacity: 0.9,
     });
-    // 🧪 TEST: FORCER VISIBLE pour voir si la sphère bouge
+    // Garder la sphère visible pour confirmer le mouvement circulaire
     fallbackSphere.setAttribute("visible", true);
-    
-    // 🧪 TEST CRITIQUE: Ajouter un cube VERT wireframe très visible
-    const testCube = document.createElement("a-entity");
-    testCube.setAttribute("geometry", {
-      primitive: "box",
-      width: 0.4,
-      height: 0.4,
-      depth: 0.4
-    });
-    testCube.setAttribute("material", {
-      color: "#00FF00",
-      shader: "flat",
-      wireframe: true
-    });
-    testCube.setAttribute("position", "0 0.3 0"); // Au-dessus de la cible
 
     // Afficher le modèle après chargement (la sphère est déjà cachée)
     modelEntity.addEventListener("model-loaded", () => {
@@ -814,7 +799,6 @@ AFRAME.registerSystem("game-manager", {
 
     target.appendChild(modelEntity);
     target.appendChild(fallbackSphere);
-    target.appendChild(testCube); // 🧪 TEST: Cube vert pour voir le mouvement
 
     // Ajouter à la scène D'ABORD
     this.el.appendChild(target);
@@ -906,37 +890,19 @@ AFRAME.registerSystem("game-manager", {
       
       // Debug VR
       if (window.vrDebugLog) {
-        window.vrDebugLog(`Add FlyTarget: ${targetId} ${plane} r=${radius.toFixed(1)}m`);
+        window.vrDebugLog(`Add Circular: ${targetId} ${plane} r=${radius.toFixed(1)}m`);
       }
       
-      target.setAttribute("flying-target", {
-        radius: radius, // Rayon du cercle optimisé
-        plane: plane, // Plan de rotation optimal (xy, xz, ou yz)
-        speed: speed, // Vitesse angulaire
-        maxX: limits.x, // Limites pour vérification stricte
-        maxY: limits.y,
-        maxZ: limits.z,
+      // 🔥 UTILISER LA VERSION SIMPLIFIÉE QUI FONCTIONNE
+      target.setAttribute("flying-target-simple", {
+        radius: radius,
+        plane: plane,
+        speed: speed,
         enabled: true,
       });
       
-      // 🧪 TEST: Ajouter un composant ultra-simple pour vérifier que tick() fonctionne
-      target.setAttribute("test-tick", { enabled: true });
-      
-      // 🧪 TEST CRITIQUE: Oscillation simple LEFT/RIGHT/UP
-      target.setAttribute("simple-oscillate", { amplitude: 0.6, speed: 1.5 });
-      
-      console.log(`✅ Composant flying-target configuré: rayon=${radius.toFixed(2)}m, vitesse=${speed.toFixed(1)} rad/s, plan=${planeName}`);
-      
-      // Vérifier après 100ms que le composant fonctionne
-      setTimeout(() => {
-        if (target.components && target.components['flying-target']) {
-          const comp = target.components['flying-target'];
-          console.log(`🔍 Vérification composant: tickCount=${comp.tickCount || 0}, centerCaptured=${comp.centerCaptured}, enabled=${comp.data.enabled}`);
-        } else {
-          console.error(`❌ Composant flying-target non trouvé sur ${targetId}!`);
-        }
-      }, 100);
-    }, 200); // ✅ Augmenté de 50ms à 200ms pour une meilleure fiabilité
+      console.log(`✅ Composant flying-target-simple configuré: rayon=${radius.toFixed(2)}m, vitesse=${speed.toFixed(1)} rad/s, plan=${planeName}`);
+    }, 200); // Délai pour s'assurer que l'entité est complètement initialisée
 
     // 🚫 Sauvegarder la position de spawn pour éviter les répétitions
     this.lastSpawnPosition = pos.clone();

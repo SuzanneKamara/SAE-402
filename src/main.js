@@ -22,6 +22,7 @@ import "./components/pause-button.js"; // ✨ Bouton pause en HUD
 import "./components/debug-vr-log.js";
 import "./components/test-tick.js"; // TEST DEBUG TICK
 import "./components/simple-oscillate.js"; // 🧪 TEST SIMPLE MOUVEMENT
+import "./components/flying-target-simple.js"; // 🔥 VERSION SIMPLIFIÉE QUI FONCTIONNE
 
 // Import des systèmes
 import "./systems/game-manager.js";
