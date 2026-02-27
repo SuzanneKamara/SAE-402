@@ -1,15 +1,14 @@
 /**
  * Composant flying-target SIMPLIFIÉ pour A-Frame
- * Mouvement circulaire BASIQUE qui fonctionne à 100%
- * Basé sur la même logique que simple-oscillate qui FONCTIONNE
+ * Mouvement circulaire optimisé avec détection de collision WebXR
  */
 
 AFRAME.registerComponent("flying-target-simple", {
   schema: {
-    radius: { type: "number", default: 0.5 },
-    speed: { type: "number", default: 1.0 },
+    radius: { type: "number", default: 0.3 },
+    speed: { type: "number", default: 0.5 },
     plane: { type: "string", default: "xy" }, // xy, xz, ou yz
-    enabled: { type: "boolean", default: true },
+    enabled: { type: "boolean", default: true }
   },
 
   init: function () {
@@ -21,12 +20,11 @@ AFRAME.registerComponent("flying-target-simple", {
     this.time = 0;
     this.tickCount = 0;
     
-    console.log(`✅ Flying-target-simple INIT: center=(${this.centerX.toFixed(2)}, ${this.centerY.toFixed(2)}, ${this.centerZ.toFixed(2)})`);
-    console.log(`   Rayon=${this.data.radius.toFixed(2)}m, Plan=${this.data.plane}, Speed=${this.data.speed}`);
+    // Le rayon est déjà calculé pour éviter les collisions
+    this.effectiveRadius = this.data.radius;
     
-    if (window.vrDebugLog) {
-      window.vrDebugLog(`Circular: ${this.data.plane} r=${this.data.radius.toFixed(2)}m`);
-    }
+    console.log(`✅ Flying-target-simple INIT: center=(${this.centerX.toFixed(2)}, ${this.centerY.toFixed(2)}, ${this.centerZ.toFixed(2)})`);
+    console.log(`   Rayon=${this.effectiveRadius.toFixed(2)}m, Plan=${this.data.plane}, Speed=${this.data.speed}`);
     
     // Pause/Resume
     this.el.sceneEl.addEventListener("game-paused", () => {
@@ -52,7 +50,7 @@ AFRAME.registerComponent("flying-target-simple", {
     const angle = this.time;
     const cosAngle = Math.cos(angle);
     const sinAngle = Math.sin(angle);
-    const radius = this.data.radius;
+    const radius = this.effectiveRadius; // 🔥 Utiliser le rayon adapté aux limites
     
     // Nouvelle position selon le plan
     let newX = this.centerX;
@@ -76,18 +74,8 @@ AFRAME.registerComponent("flying-target-simple", {
         break;
     }
     
-    // 🔥 APPLIQUER (même technique que simple-oscillate)
+    // 🔥 Appliquer la nouvelle position
     this.el.object3D.position.set(newX, newY, newZ);
-    
-    // Debug
-    if (this.tickCount === 1 && window.vrDebugLog) {
-      window.vrDebugLog("Flying-simple: TICK1!");
-    }
-    
-    if (this.tickCount % 60 === 0 && window.vrDebugLog) {
-      const angleDeg = (angle * 180 / Math.PI) % 360;
-      window.vrDebugLog(`Fly: ${angleDeg.toFixed(0)}deg`);
-    }
     
     if (this.tickCount === 5) {
       console.log(`🎯 Flying-target-simple MOVING! Angle=${angle.toFixed(2)}, Pos=(${newX.toFixed(3)}, ${newY.toFixed(3)}, ${newZ.toFixed(3)})`);

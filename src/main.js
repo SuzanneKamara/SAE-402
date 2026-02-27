@@ -10,19 +10,15 @@ import "./components/bow-draw-system.js";
 import "./components/bow-string.js";
 import "./components/arrow-physics.js";
 import "./components/target-behavior.js";
-import "./components/flying-target.js";
 import "./components/scene-mesh-handler.js";
 import "./components/surface-detector.js";
 import "./components/webxr-anchor-manager.js";
 import "./components/score-hud.js";
 import "./components/vr-menu.js";
 import "./components/end-menu.js";
-import "./components/pause-menu.js"; // ✨ Menu de pause
-import "./components/pause-button.js"; // ✨ Bouton pause en HUD
-import "./components/debug-vr-log.js";
-import "./components/test-tick.js"; // TEST DEBUG TICK
-import "./components/simple-oscillate.js"; // 🧪 TEST SIMPLE MOUVEMENT
-import "./components/flying-target-simple.js"; // 🔥 VERSION SIMPLIFIÉE QUI FONCTIONNE
+import "./components/pause-menu.js";
+import "./components/pause-button.js";
+import "./components/flying-target-simple.js";
 
 // Import des systèmes
 import "./systems/game-manager.js";
